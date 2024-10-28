@@ -13,7 +13,7 @@ or dropfile in bat file
 ```
 
 ### Support Model
-- Stable Diffusion 1.5
-- Stable Diffusion XL
+- Stable Diffusion 1.5 [Conv]
+- Stable Diffusion XL [Conv]
 - ~~Stable Diffusion 3.0/3.5~~
 - Flux 1.0
