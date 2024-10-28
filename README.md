@@ -5,3 +5,15 @@ Requirements
 ```
 pip install Torch
 ```
+
+### Usage
+```
+LoRA_parameter.py -i file
+or dropfile in bat file
+```
+
+### Support Model
+- Stable Diffusion 1.5
+- Stable Diffusion XL
+- ~~Stable Diffusion 3.0/3.5~~
+- Flux 1.0
