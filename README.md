@@ -17,3 +17,8 @@ or dropfile in bat file
 - Stable Diffusion XL [Conv]
 - ~~Stable Diffusion 3.0/3.5~~
 - Flux 1.0
+
+### To do 
+- [ ] Block average weight
+- [ ] List parameter
+- [ ] Arguments separate commands
