@@ -38,7 +38,7 @@ def get_weight_vector_and_average_by_block(state_dict, base_names, block_ranges)
 
             for k, v in state_dict.items():
                 if block_name in k and "alpha" not in k and isinstance(v, torch.Tensor):
-                    block_weights.append(v.to(torch.float32).flatten())  # แปลงเป็น Float32 และ flatten
+                    block_weights.append(v.to(torch.float32).flatten()) 
 
             if block_weights:
                 combined_tensor = torch.cat(block_weights)
