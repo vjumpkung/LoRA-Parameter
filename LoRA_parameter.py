@@ -29,7 +29,7 @@ def format_parameters(param_count):
     return f"{formatted} ({full_count_with_commas})"
 
 def get_weight_vector_and_average_by_block(state_dict, base_names, block_ranges):
-    block_averages = {}
+    block_averages_and_max = {}
 
     for base_name, block_range in zip(base_names, block_ranges):
         for i in range(block_range):
@@ -42,11 +42,13 @@ def get_weight_vector_and_average_by_block(state_dict, base_names, block_ranges)
 
             if block_weights:
                 combined_tensor = torch.cat(block_weights)
-                block_averages[block_name] = combined_tensor.abs().mean().item()
+                avg_weight = combined_tensor.abs().mean().item() 
+                max_weight = combined_tensor.abs().max().item()  
+                block_averages_and_max[block_name] = (avg_weight, max_weight)
             else:
-                block_averages[block_name] = "Not Detect"
+                block_averages_and_max[block_name] = ("Not Detect", "Not Detect")
 
-    return block_averages
+    return block_averages_and_max
 
 def main():
     parser = argparse.ArgumentParser(description="Calculate parameters of LoRA components.")
@@ -86,13 +88,13 @@ def main():
     unet_flux_ranges = [38, 19]
 
     if any(name in key for key in state_dict.keys() for name in unet_base_names):
-        unet_block_averages = get_weight_vector_and_average_by_block(state_dict, unet_base_names, unet_block_ranges)
-        print("\nUNet block averages:")
-        for block, avg in unet_block_averages.items():
-            if isinstance(avg, str):
-                print(f"{block} average weight: {avg}")
+        unet_block_averages_and_max = get_weight_vector_and_average_by_block(state_dict, unet_base_names, unet_block_ranges)
+        print("\nUNet block averages and max weights:")
+        for block, (avg, max_val) in unet_block_averages_and_max.items():
+            if isinstance(avg, str) or isinstance(max_val, str):
+                print(f"{block} average weight: {avg}, max weight: {max_val}")
             else:
-                print(f"{block} average weight: {avg:.16f}")
+                print(f"{block} average weight: {avg:.16f}, max weight: {max_val:.16f}")
 
     if any(name in key for key in state_dict.keys() for name in unet_flux_name):
         unet_fluxblock_averages = get_weight_vector_and_average_by_block(state_dict, unet_flux_name, unet_flux_ranges)
@@ -104,9 +106,9 @@ def main():
                 print(f"{block} average weight: {avg:.16f}")
 
     if any("lora_te1_text_model_encoder_layers" in key for key in state_dict.keys()):
-        text_encoder_te1_layer_averages = get_weight_vector_and_average_by_block(state_dict, ["lora_te1_text_model_encoder_layers"], [12])
+        text_encoder_te1_layer_averages_and_max = get_weight_vector_and_average_by_block(state_dict, ["lora_te1_text_model_encoder_layers"], [12])
         print("\nText-Encoder TE1 layers average weights:")
-        for layer, avg in text_encoder_te1_layer_averages.items():
+        for layer, (avg, _) in text_encoder_te1_layer_averages_and_max.items(): 
             short_layer_name = layer.replace("lora_te1_text_model_encoder_", "lora_te1_")
             if isinstance(avg, str):
                 print(f"{short_layer_name} average weight: {avg}")
@@ -114,19 +116,19 @@ def main():
                 print(f"{short_layer_name} average weight: {avg:.16f}")
 
     if any("lora_te2_text_model_encoder_layers" in key for key in state_dict.keys()):
-        text_encoder_te2_layer_averages = get_weight_vector_and_average_by_block(state_dict, ["lora_te2_text_model_encoder_layers"], [32])
+        text_encoder_te1_layer_averages_and_max = get_weight_vector_and_average_by_block(state_dict, ["lora_te2_text_model_encoder_layers"], [32])
         print("\nText-Encoder TE2 layers average weights:")
-        for layer, avg in text_encoder_te2_layer_averages.items():
+        for layer, (avg, _) in text_encoder_te1_layer_averages_and_max.items(): 
             short_layer_name = layer.replace("lora_te2_text_model_encoder_", "lora_te2_")
             if isinstance(avg, str):
                 print(f"{short_layer_name} average weight: {avg}")
             else:
                 print(f"{short_layer_name} average weight: {avg:.16f}")
 
-    if any("lora_te3_encoder_block" in key for key in state_dict.keys()):
-        text_encoder_te3_layer_averages = get_weight_vector_and_average_by_block(state_dict, ["lora_te3_encoder_block"], [24])
+    if any("lora_te3_text_model_encoder_layers" in key for key in state_dict.keys()):
+        text_encoder_te1_layer_averages_and_max = get_weight_vector_and_average_by_block(state_dict, ["lora_te3_text_model_encoder_layers"], [24])
         print("\nText-Encoder TE3 layers average weights:")
-        for layer, avg in text_encoder_te3_layer_averages.items():
+        for layer, (avg, _) in text_encoder_te1_layer_averages_and_max.items(): 
             short_layer_name = layer.replace("lora_te3_text_model_encoder_", "lora_te3_")
             if isinstance(avg, str):
                 print(f"{short_layer_name} average weight: {avg}")
