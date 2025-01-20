@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import re
 import os
+from statistics import mean
 from PIL import Image
 
 try:
@@ -180,6 +181,8 @@ def main():
                     unet_plot_name[unet_match_pattern[1]] + unet_match_pattern[2]
                 )
 
+        print(f"UNet average weights : {mean(unet_y_avg_value)}")
+
         plt.subplot(row_counts, 1, count)
         plt.plot(unet_x_name, unet_y_avg_value, marker="o")
         addlabels(unet_x_name, unet_y_avg_value)
@@ -202,8 +205,8 @@ def main():
 
         print("\nUNet Flux block averages:")
         for block, avg in unet_fluxblock_averages.items():
-            if isinstance(avg, str):
-                print(f"{block} average weight: {avg}")
+            if isinstance(avg[0], str) and isinstance(avg[1], str):
+                print(f"{block} average weight: {avg[0]}")
             else:
                 print(
                     f"{block} average weight: {avg[0]:.16f}, max weight: {avg[1]:.16f}"
@@ -214,6 +217,8 @@ def main():
                 unet_flux_x_name.append(
                     unet_plot_name[unet_match_pattern[1]] + unet_match_pattern[2]
                 )
+
+        print(f"UNet average weights : {mean(unet_flux_y_avg1_value)}")
 
         plt.subplot(row_counts, 1, count)
         plt.plot(unet_flux_x_name, unet_flux_y_avg1_value, marker="o")
@@ -247,10 +252,14 @@ def main():
             if isinstance(avg, str):
                 print(f"{short_layer_name} average weight: {avg}")
             else:
-                print(f"{short_layer_name} average weight: {avg:.16f}")
+                print(
+                    f"{short_layer_name} average weight: {avg:.16f}, max weight: {_:.16f}"
+                )
                 te1_avg.append(round(avg, 16))
                 te1_pattern = re.split(r"(.*?)_(\d+)$", short_layer_name)
                 te1_x_name.append(te_plot_name[te1_pattern[1]] + te1_pattern[2])
+
+        print(f"TE1 average weights : {mean(te1_avg)}")
 
         plt.subplot(row_counts, 1, count)
         plt.plot(te1_x_name, te1_avg, marker="o")
@@ -276,10 +285,14 @@ def main():
             if isinstance(avg, str):
                 print(f"{short_layer_name} average weight: {avg}")
             else:
-                print(f"{short_layer_name} average weight: {avg:.16f}")
+                print(
+                    f"{short_layer_name} average weight: {avg:.16f}, max weight: {_:.16f}"
+                )
                 te2_avg.append(round(avg, 16))
                 te2_pattern = re.split(r"(.*?)_(\d+)$", short_layer_name)
                 te2_x_name.append(te_plot_name[te2_pattern[1]] + te2_pattern[2])
+
+        print(f"TE2 average weights : {mean(te2_avg)}")
 
         plt.subplot(row_counts, 1, count)
         plt.plot(te2_x_name, te2_avg, marker="o")
@@ -306,10 +319,15 @@ def main():
             if isinstance(avg, str):
                 print(f"{short_layer_name} average weight: {avg}")
             else:
-                print(f"{short_layer_name} average weight: {avg:.16f}")
+                print(
+                    f"{short_layer_name} average weight: {avg:.16f}, max weight: {_:.16f}"
+                )
                 te3_avg.append(round(avg, 16))
                 te3_pattern = re.split(r"(.*?)_(\d+)$", short_layer_name)
                 te3_x_name.append(te_plot_name[te3_pattern[1]] + te3_pattern[2])
+
+        print(f"TE3 average weights : {mean(te3_avg)}")
+
         plt.subplot(row_counts, 1, count)
         plt.plot(te3_x_name, te3_avg, marker="o")
         plt.xticks(rotation=45)
