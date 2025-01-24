@@ -1,18 +1,17 @@
-import torch
 import argparse
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-import re
 import os
 from statistics import mean
-from PIL import Image
+
+import torch
+from tabulate import tabulate
+import json
 
 try:
     from safetensors import safe_open
 
     def load_state_dict(file_path):
         with safe_open(file_path, framework="pt", device="cpu") as f:
-            return {key: f.get_tensor(key) for key in f.keys()}
+            return {key: f.get_tensor(key) for key in f.keys()}, f.metadata()
 
 except ImportError:
     from safetensors.torch import load_file
@@ -28,37 +27,31 @@ unet_base_names = [
 ]
 unet_block_ranges = [9, 3, 9]
 
-unet_flux_name = [
+unet_flux_names = [
     "lora_unet_single_blocks",
     "lora_unet_double_blocks",
 ]
 unet_flux_ranges = [38, 19]
+te_names = [
+    "lora_te1_text_model_encoder_layers",
+    "lora_te2_text_model_encoder_layers",
+    "lora_te3_text_model_encoder_layers",
+]
 
-unet_plot_name = {
-    "lora_unet_input_blocks": "IN",
-    "lora_unet_middle_block": "MID",
-    "lora_unet_output_blocks": "OUT",
-    "lora_unet_single_blocks": "SINGLE_",
-    "lora_unet_double_blocks": "DOUBLE_",
+te_block_ranges = [12, 32, 24]
+
+lora_detect = {
+    "unet": [False, False, False],
+    "unet_flux": [False, False],
+    "te": [False, False, False],
 }
 
-te_plot_name = {
-    "lora_te1_layers": "TE1_",
-    "lora_te2_layers": "TE2_",
-    "lora_te3_layers": "TE3_",
+lora_elements = {
+    "unet": [{}, {}, {}],
+    "unet_flux": [{}, {}],
+    "te": [{}, {}, {}],
 }
-
-
-def addlabels(x, y):
-    for i in range(len(x)):
-        plt.text(i, y[i], f"{y[i]*100:.4f}", ha="center", va="bottom")
-
-
-def count_parameters(state_dict, search_terms):
-    relevant_params = {
-        k: v for k, v in state_dict.items() if any(term in k for term in search_terms)
-    }
-    return sum(param.numel() for param in relevant_params.values()), relevant_params
+debug_parse = {"unet": False, "te": False}
 
 
 def format_parameters(param_count):
@@ -75,271 +68,236 @@ def format_parameters(param_count):
     return f"{formatted} ({full_count_with_commas})"
 
 
-def count_for_plot(*args):
-    total_detected = 0
-    for i in args:
-        if i:
-            total_detected += 1
-    return total_detected
+def calculate_parameters_avg_and_max_weights(key, block_ranges, base_names):
+    block_averages_max_and_param = {}
+    if any(lora_detect[key]):
+        for element, base_name, block_range in zip(
+            lora_elements[key], base_names, block_ranges
+        ):
+            for i in range(block_range):
+                block_name = f"{base_name}_{i}"
+                block_weights = []
+                parameters = []
+                for k, v in element.items():
+                    if (
+                        block_name in k
+                        and "alpha" not in k
+                        and isinstance(v, torch.Tensor)
+                    ):
+                        block_weights.append(v.to(torch.float32).flatten())
+                    if block_name in k:
+                        parameters.append(v.numel())
+                if block_weights:
+                    combined_tensor = torch.cat(block_weights)
+                    avg_weight = combined_tensor.abs().mean().item()
+                    max_weight = combined_tensor.abs().max().item()
+                    block_averages_max_and_param[block_name] = (
+                        avg_weight,
+                        max_weight,
+                        sum(parameters),
+                    )
+                else:
+                    block_averages_max_and_param[block_name] = (None, None, None)
+
+    return block_averages_max_and_param
 
 
-def get_weight_vector_and_average_by_block(state_dict, base_names, block_ranges):
-    block_averages_and_max = {}
+def legacy_count_parameters(state_dict, search_terms):
+    relevant_params = {
+        k: v for k, v in state_dict.items() if any(term in k for term in search_terms)
+    }
 
-    for base_name, block_range in zip(base_names, block_ranges):
-        for i in range(block_range):
-            block_name = f"{base_name}_{i}"
-            block_weights = []
+    return sum(param.numel() for param in relevant_params.values())
 
-            for k, v in state_dict.items():
-                if block_name in k and "alpha" not in k and isinstance(v, torch.Tensor):
-                    block_weights.append(v.to(torch.float32).flatten())
 
-            if block_weights:
-                combined_tensor = torch.cat(block_weights)
-                avg_weight = combined_tensor.abs().mean().item()
-                max_weight = combined_tensor.abs().max().item()
-                block_averages_and_max[block_name] = (avg_weight, max_weight)
+def get_total_parameters(blocks: dict, select=""):
+
+    total = 0
+
+    for key, (avg, maxx, parameters) in blocks.items():
+        if (
+            select not in ["single", "double", "te1", "te2", "te3"]
+            and parameters is not None
+        ):
+            total += parameters
+        else:
+            if select in key and parameters is not None:
+                total += parameters
+
+    return total
+
+
+def te_sepearator(te_cal: dict):
+    te_cal_seperator = {"te1": {}, "te2": {}, "te3": {}}
+    for i in te_cal:
+        for j in [1, 2, 3]:
+            if f"te{j}" in i and None not in te_cal[i]:
+                te_cal_seperator[f"te{j}"][i] = te_cal[i]
+    return te_cal_seperator
+
+
+def seperated_data(state_dict: dict):
+    for part, value in state_dict.items():
+        for idx, val in enumerate(unet_base_names):
+            if val in part:
+                lora_detect["unet"][idx] = True
+                lora_elements["unet"][idx][part] = value
+        for idx, val in enumerate(unet_flux_names):
+            if val in part:
+                lora_detect["unet_flux"][idx] = True
+                lora_elements["unet_flux"][idx][part] = value
+        for idx, val in enumerate(te_names):
+            if val in part:
+                lora_detect["te"][idx] = True
+                lora_elements["te"][idx][part] = value
+
+
+def print_calculated(name: str, opt: dict):
+    if len(opt) > 0:
+        print(f"\n{name} block averages, max weights and parameters:")
+
+        get_longest_key_name = len(max(opt.keys())) + 1
+
+        table = [["block name", "average weight", "max weight", "parameters"]]
+
+        for block, v in opt.items():
+            if None not in v:
+                avg, max_val, parameters = v
+
+                table.append([block, avg, max_val, f"{parameters:,}"])
             else:
-                block_averages_and_max[block_name] = ("Not Detect", "Not Detect")
+                not_detected = None
+                table.append([block, not_detected, not_detected, not_detected])
+        print(
+            tabulate(
+                table,
+                headers="firstrow",
+                floatfmt=".16f",
+                colalign=("center", "center", "center", "center"),
+                tablefmt="psql",
+                missingval="-",
+            )
+        )
+        print(
+            f"{name} average weight : {mean(list(map(lambda x : x[0],filter(lambda x : None not in x,opt.values()))))}"
+        )
 
-    return block_averages_and_max
+
+def print_metadata(metadata: dict):
+    print("\nMetadata")
+    metadata_table = [["key", "value"]]
+    for k, v in metadata.items():
+        if "ss" in k and k not in [
+            "ss_tag_frequency",
+            "ss_bucket_info",
+            "sshs_model_hash",
+            "ss_new_sd_model_hash",
+            "ss_sd_scripts_commit_hash",
+            "ss_dataset_dirs",
+            "ss_reg_dataset_dirs",
+            "ss_datasets",
+        ]:
+            metadata_table.append([k, v])
+    print(
+        tabulate(
+            metadata_table,
+            headers="firstrow",
+            tablefmt="psql",
+            missingval="-",
+        )
+    )
 
 
-def main():
+def main(args):
+    lora_model_path = args.input
+    debug = args.debug
+
+    filename = os.path.split(lora_model_path)[-1]
+
+    if not debug:
+        debug_parse["unet"] = True
+        debug_parse["te"] = True
+    else:
+        if "unet" in debug:
+            debug_parse["unet"] = True
+        if "te" in debug:
+            debug_parse["te"] = True
+
+    state_dict, metadata = load_state_dict(lora_model_path)
+
+    if args.save_metadata:
+        with open(
+            os.path.join("metadata_output", f"{filename}_raw_metadata.json"), "+w"
+        ) as fp:
+            json.dump(metadata, fp, indent=4)
+
+    seperated_data(state_dict)
+
+    if debug_parse["unet"]:
+        unet_cal = calculate_parameters_avg_and_max_weights(
+            "unet", unet_block_ranges, unet_base_names
+        )
+        unet_flux_cal = calculate_parameters_avg_and_max_weights(
+            "unet_flux", unet_flux_ranges, unet_flux_names
+        )
+    if debug_parse["te"]:
+        te_cal = calculate_parameters_avg_and_max_weights(
+            "te", te_block_ranges, te_names
+        )
+        te_cal_seperated = te_sepearator(te_cal)
+
+    if debug_parse["unet"]:
+        print(
+            f"UNet                     : {format_parameters(get_total_parameters(unet_cal))}"
+        )
+        print(
+            f"Conv layer UNet          : {format_parameters(legacy_count_parameters(state_dict, ['conv']))}"
+        )
+        print(
+            f"UNet single block [Flux] : {format_parameters(get_total_parameters(unet_flux_cal, 'single'))}"
+        )
+        print(
+            f"UNet double block [Flux] : {format_parameters(get_total_parameters(unet_flux_cal, 'double'))}"
+        )
+    if debug_parse["te"]:
+        print(
+            f"Text-Encoder 1 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
+        )
+        print(
+            f"Text-Encoder 2 Clip_G    : {format_parameters(get_total_parameters(te_cal, 'te2'))}"
+        )
+        print(
+            f"Text-Encoder 3 T5XXL     : {format_parameters(get_total_parameters(te_cal, 'te3'))}"
+        )
+
+    if args.metadata:
+        print_metadata(metadata)
+    if debug_parse["unet"]:
+        print_calculated("UNet", unet_cal)
+        print_calculated("UNet Flux", unet_flux_cal)
+    if debug_parse["te"]:
+        print_calculated("Text-Encoder TE1", te_cal_seperated["te1"])
+        print_calculated("Text-Encoder TE2", te_cal_seperated["te2"])
+        print_calculated("Text-Encoder TE3", te_cal_seperated["te3"])
+
+
+if __name__ == "__main__":
+
     parser = argparse.ArgumentParser(
         description="Calculate parameters of LoRA components."
     )
     parser.add_argument(
         "-i", "--input", required=True, help="Path to the .safetensors file."
     )
+    parser.add_argument(
+        "--debug",
+        nargs="+",
+        help="debug specific module accept args is unet and te example --debug unet --debug te --debug unet te",
+    )
+    parser.add_argument(
+        "--save_metadata", action="store_true", help="Saving Metadata into json file"
+    )
+    parser.add_argument("--metadata", action="store_true", help="Show metadata")
     args = parser.parse_args()
 
-    lora_model_path = args.input
-
-    filename = os.path.split(lora_model_path)[-1]
-
-    state_dict = load_state_dict(lora_model_path)
-
-    unet_params, _ = count_parameters(state_dict, ["lora_unet"])
-    conv_params, _ = count_parameters(state_dict, ["conv"])
-    unet_single_params, _ = count_parameters(state_dict, ["lora_unet_single"])
-    unet_double_params, _ = count_parameters(state_dict, ["lora_unet_double"])
-    text_encoder_1_params, _ = count_parameters(
-        state_dict, ["lora_te_text_model_encoder", "lora_te1_text_model_encoder"]
-    )
-    text_encoder_2_params, _ = count_parameters(state_dict, ["lora_te2"])
-    text_encoder_3_params, _ = count_parameters(state_dict, ["lora_te3"])
-
-    print(f"UNet                    : {format_parameters(unet_params)}")
-    print(f"Conv layer UNet         : {format_parameters(conv_params)}")
-    print(f"UNet single block [Flux]: {format_parameters(unet_single_params)}")
-    print(f"UNet double block [Flux]: {format_parameters(unet_double_params)}")
-    print(f"Text-Encoder 1 Clip_L   : {format_parameters(text_encoder_1_params)}")
-    print(f"Text-Encoder 2 Clip_G   : {format_parameters(text_encoder_2_params)}")
-    print(f"Text-Encoder 3 T5       : {format_parameters(text_encoder_3_params)}")
-
-    row_counts = count_for_plot(
-        unet_params,
-        unet_single_params + unet_double_params,
-        text_encoder_1_params,
-        text_encoder_2_params,
-        text_encoder_3_params,
-    )
-
-    if unet_params and not (unet_single_params + unet_double_params):
-        row_counts += 1
-
-    if not (unet_single_params + unet_double_params):
-        plt.figure(figsize=(30, 10 * row_counts))
-    else:
-        plt.figure(figsize=(50, 10 * row_counts))
-
-    plt.rcParams.update({"font.size": 14})
-
-    count = 1
-
-    if any(name in key for key in state_dict.keys() for name in unet_base_names):
-
-        unet_x_name = []
-        unet_y_avg_value = []
-        unet_y_max_value = []
-
-        unet_block_averages_and_max = get_weight_vector_and_average_by_block(
-            state_dict, unet_base_names, unet_block_ranges
-        )
-        print("\nUNet block averages and max weights:")
-        for block, (avg, max_val) in unet_block_averages_and_max.items():
-            if isinstance(avg, str) or isinstance(max_val, str):
-                print(f"{block} average weight: {avg}, max weight: {max_val}")
-            else:
-                print(f"{block} average weight: {avg:.16f}, max weight: {max_val:.16f}")
-                unet_y_avg_value.append(round(avg, 16))
-                unet_y_max_value.append(round(max_val, 16))
-                unet_match_pattern = re.split(r"(.*?)_(\d+)$", block)
-                unet_x_name.append(
-                    unet_plot_name[unet_match_pattern[1]] + unet_match_pattern[2]
-                )
-
-        print(f"UNet average weights : {mean(unet_y_avg_value)}")
-
-        plt.subplot(row_counts, 1, count)
-        plt.plot(unet_x_name, unet_y_avg_value, marker="o")
-        addlabels(unet_x_name, unet_y_avg_value)
-        plt.title("UNet block averages")
-        count += 1
-        plt.subplot(row_counts, 1, count)
-        plt.plot(unet_x_name, unet_y_max_value, marker="o")
-        addlabels(unet_x_name, unet_y_max_value)
-        plt.title("UNet block max weights")
-        count += 1
-
-    if any(name in key for key in state_dict.keys() for name in unet_flux_name):
-        unet_fluxblock_averages = get_weight_vector_and_average_by_block(
-            state_dict, unet_flux_name, unet_flux_ranges
-        )
-
-        unet_flux_x_name = []
-        unet_flux_y_avg1_value = []
-        unet_flux_y_max_value = []
-
-        print("\nUNet Flux block averages:")
-        for block, avg in unet_fluxblock_averages.items():
-            if isinstance(avg[0], str) and isinstance(avg[1], str):
-                print(f"{block} average weight: {avg[0]}")
-            else:
-                print(
-                    f"{block} average weight: {avg[0]:.16f}, max weight: {avg[1]:.16f}"
-                )
-                unet_flux_y_avg1_value.append(round(avg[0], 16))
-                unet_flux_y_max_value.append(round(avg[1], 16))
-                unet_match_pattern = re.split(r"(.*?)_(\d+)$", block)
-                unet_flux_x_name.append(
-                    unet_plot_name[unet_match_pattern[1]] + unet_match_pattern[2]
-                )
-
-        print(f"UNet average weights : {mean(unet_flux_y_avg1_value)}")
-
-        plt.subplot(row_counts, 1, count)
-        plt.plot(unet_flux_x_name, unet_flux_y_avg1_value, marker="o")
-        plt.xticks(rotation=90)
-        addlabels(unet_flux_x_name, unet_flux_y_avg1_value)
-        plt.title("UNet Flux block averages")
-        count += 1
-
-        plt.subplot(row_counts, 1, count)
-        plt.plot(unet_flux_x_name, unet_flux_y_max_value, marker="o")
-        plt.xticks(rotation=90)
-        addlabels(unet_flux_x_name, unet_flux_y_max_value)
-        plt.title("UNet Flux block max")
-        count += 1
-
-    if any("lora_te1_text_model_encoder_layers" in key for key in state_dict.keys()):
-        text_encoder_te1_layer_averages_and_max = (
-            get_weight_vector_and_average_by_block(
-                state_dict, ["lora_te1_text_model_encoder_layers"], [12]
-            )
-        )
-
-        te1_x_name = []
-        te1_avg = []
-
-        print("\nText-Encoder TE1 layers average weights:")
-        for layer, (avg, _) in text_encoder_te1_layer_averages_and_max.items():
-            short_layer_name = layer.replace(
-                "lora_te1_text_model_encoder_", "lora_te1_"
-            )
-            if isinstance(avg, str):
-                print(f"{short_layer_name} average weight: {avg}")
-            else:
-                print(
-                    f"{short_layer_name} average weight: {avg:.16f}, max weight: {_:.16f}"
-                )
-                te1_avg.append(round(avg, 16))
-                te1_pattern = re.split(r"(.*?)_(\d+)$", short_layer_name)
-                te1_x_name.append(te_plot_name[te1_pattern[1]] + te1_pattern[2])
-
-        print(f"TE1 average weights : {mean(te1_avg)}")
-
-        plt.subplot(row_counts, 1, count)
-        plt.plot(te1_x_name, te1_avg, marker="o")
-        addlabels(te1_x_name, te1_avg)
-        plt.title("Text-Encoder TE1 layers average weights")
-        count += 1
-
-    if any("lora_te2_text_model_encoder_layers" in key for key in state_dict.keys()):
-        text_encoder_te1_layer_averages_and_max = (
-            get_weight_vector_and_average_by_block(
-                state_dict, ["lora_te2_text_model_encoder_layers"], [32]
-            )
-        )
-
-        te2_x_name = []
-        te2_avg = []
-
-        print("\nText-Encoder TE2 layers average weights:")
-        for layer, (avg, _) in text_encoder_te1_layer_averages_and_max.items():
-            short_layer_name = layer.replace(
-                "lora_te2_text_model_encoder_", "lora_te2_"
-            )
-            if isinstance(avg, str):
-                print(f"{short_layer_name} average weight: {avg}")
-            else:
-                print(
-                    f"{short_layer_name} average weight: {avg:.16f}, max weight: {_:.16f}"
-                )
-                te2_avg.append(round(avg, 16))
-                te2_pattern = re.split(r"(.*?)_(\d+)$", short_layer_name)
-                te2_x_name.append(te_plot_name[te2_pattern[1]] + te2_pattern[2])
-
-        print(f"TE2 average weights : {mean(te2_avg)}")
-
-        plt.subplot(row_counts, 1, count)
-        plt.plot(te2_x_name, te2_avg, marker="o")
-        plt.xticks(rotation=45)
-        addlabels(te2_x_name, te2_avg)
-        plt.title("Text-Encoder TE2 layers average weights")
-        count += 1
-
-    if any("lora_te3_text_model_encoder_layers" in key for key in state_dict.keys()):
-        text_encoder_te1_layer_averages_and_max = (
-            get_weight_vector_and_average_by_block(
-                state_dict, ["lora_te3_text_model_encoder_layers"], [24]
-            )
-        )
-
-        te3_x_name = []
-        te3_avg = []
-
-        print("\nText-Encoder TE3 layers average weights:")
-        for layer, (avg, _) in text_encoder_te1_layer_averages_and_max.items():
-            short_layer_name = layer.replace(
-                "lora_te3_text_model_encoder_", "lora_te3_"
-            )
-            if isinstance(avg, str):
-                print(f"{short_layer_name} average weight: {avg}")
-            else:
-                print(
-                    f"{short_layer_name} average weight: {avg:.16f}, max weight: {_:.16f}"
-                )
-                te3_avg.append(round(avg, 16))
-                te3_pattern = re.split(r"(.*?)_(\d+)$", short_layer_name)
-                te3_x_name.append(te_plot_name[te3_pattern[1]] + te3_pattern[2])
-
-        print(f"TE3 average weights : {mean(te3_avg)}")
-
-        plt.subplot(row_counts, 1, count)
-        plt.plot(te3_x_name, te3_avg, marker="o")
-        plt.xticks(rotation=45)
-        addlabels(te3_x_name, te3_avg)
-        plt.title("Text-Encoder TE3 layers average weights")
-        count += 1
-
-    plt.tight_layout()
-    plt.savefig(f"output/{filename.split('.')[0]}.png")
-    img = Image.open(f"output/{filename.split('.')[0]}.png")
-    img.show()
-
-
-if __name__ == "__main__":
-    main()
+    main(args)

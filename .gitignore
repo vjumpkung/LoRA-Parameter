@@ -1,2 +1,4 @@
+metadata_output/*.json
+output
 output/*.png
 experiment.ipynb
