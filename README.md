@@ -8,7 +8,7 @@ pip install -r requirements.txt
 
 ## Usage
 ```
-LoRA_parameter.py --input safetensors_lora_file
+python LoRA_parameter.py --input safetensors_lora_file
 ```
 or
 ```
@@ -34,7 +34,7 @@ drop file into dropfile_LoRA_parameter.bat
 
 ## TODO
 
-- [ ] Graph Plotting
+- [ ] Graph Plotting (export as image)
 
 ## Sample output
 
