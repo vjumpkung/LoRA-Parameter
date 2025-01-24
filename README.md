@@ -38,6 +38,18 @@ drop file into dropfile_LoRA_parameter.bat
 
 ## Sample output
 
+### total parameters
+
+```
+UNet                     : 42.56M parameters (42,558,162)
+Conv layer UNet          : Not Detect
+UNet single block [Flux] : Not Detect
+UNet double block [Flux] : Not Detect
+Text-Encoder 1 Clip_L    : 3.10M parameters (3,096,660)
+Text-Encoder 2 Clip_G    : 19.91M parameters (19,906,884)
+Text-Encoder 3 T5XXL     : Not Detect
+```
+
 ### average, max, parameters in each block weight
 
 ```
