@@ -315,7 +315,7 @@ def main(args):
         )
     if debug_parse["te"]:
         print(
-            f"Text-Encoder 0 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te0'))}"
+            f"Text-Encoder 0 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te0')) if isFlux == False and isXL == False else 'Not Detected'}"
         )
         print(
             f"Text-Encoder 1 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
