@@ -20,11 +20,18 @@ except ImportError:
         return load_file(file_path)
 
 
-unet_base_names = [
-    "lora_unet_input_blocks",
-    "lora_unet_middle_block",
-    "lora_unet_output_blocks",
-]
+unet_base_names = {
+    "1.5": [
+        "lora_unet_down_blocks",
+        "lora_unet_mid_block_attentions",
+        "lora_unet_up_blocks",
+    ],
+    "xl": [
+        "lora_unet_input_blocks",
+        "lora_unet_middle_block",
+        "lora_unet_output_blocks",
+    ],
+}
 unet_block_ranges = [9, 3, 9]
 
 unet_flux_names = [
@@ -32,25 +39,34 @@ unet_flux_names = [
     "lora_unet_double_blocks",
 ]
 unet_flux_ranges = [38, 19]
+
+unet_sd35_names = ["lora_unet_joint_blocks"]
+unet_sd35_ranges = [38]
+
 te_names = [
+    "lora_te_text_model_encoder_layers",
     "lora_te1_text_model_encoder_layers",
     "lora_te2_text_model_encoder_layers",
     "lora_te3_text_model_encoder_layers",
 ]
 
-te_block_ranges = [12, 32, 24]
+te_block_ranges = [12, 12, 32, 24]
 
 lora_detect = {
-    "unet": [False, False, False],
+    "unet": {"1.5": [False, False, False], "xl": [False, False, False]},
+    "unet35": [False],
     "unet_flux": [False, False],
     "te": [False, False, False],
 }
 
 lora_elements = {
     "unet": [{}, {}, {}],
+    "unet35": [{}],
     "unet_flux": [{}, {}],
-    "te": [{}, {}, {}],
+    "te": [{}, {}, {}, {}],
 }
+isXL = False
+isFlux = False
 debug_parse = {"unet": False, "te": False}
 
 
@@ -70,7 +86,18 @@ def format_parameters(param_count):
 
 def calculate_parameters_avg_and_max_weights(key, block_ranges, base_names):
     block_averages_max_and_param = {}
-    if any(lora_detect[key]):
+
+    if key == "unet":
+        if isXL:
+            whichcal = lora_detect[key]["xl"]
+            base_names = base_names["xl"]
+        else:
+            whichcal = lora_detect[key]["1.5"]
+            base_names = base_names["1.5"]
+    else:
+        whichcal = lora_detect[key]
+
+    if any(whichcal):
         for element, base_name, block_range in zip(
             lora_elements[key], base_names, block_ranges
         ):
@@ -128,24 +155,43 @@ def get_total_parameters(blocks: dict, select=""):
 
 
 def te_sepearator(te_cal: dict):
-    te_cal_seperator = {"te1": {}, "te2": {}, "te3": {}}
+    te_cal_seperator = {"te0": {}, "te1": {}, "te2": {}, "te3": {}}
     for i in te_cal:
-        for j in [1, 2, 3]:
-            if f"te{j}" in i and None not in te_cal[i]:
+        for j in range(4):
+            if (
+                j == 0
+                and f"te" in i
+                and None not in te_cal[i]
+                and isXL == False
+                and isFlux == False
+            ):
+                te_cal_seperator[f"te0"][i] = te_cal[i]
+            elif f"te{j}" in i and None not in te_cal[i]:
                 te_cal_seperator[f"te{j}"][i] = te_cal[i]
     return te_cal_seperator
 
 
 def seperated_data(state_dict: dict):
+    global isXL, isFlux
     for part, value in state_dict.items():
-        for idx, val in enumerate(unet_base_names):
+        for k, v in unet_base_names.items():
+            for idx, val in enumerate(v):
+                if val in part:
+                    if k == "xl":
+                        isXL = True
+                    else:
+                        isXL = False
+                    lora_detect["unet"][k][idx] = True
+                    lora_elements["unet"][idx][part] = value
+        for idx, val in enumerate(unet_sd35_names):
             if val in part:
-                lora_detect["unet"][idx] = True
-                lora_elements["unet"][idx][part] = value
+                lora_detect["unet35"][idx] = True
+                lora_elements["unet35"][idx][part] = value
         for idx, val in enumerate(unet_flux_names):
             if val in part:
                 lora_detect["unet_flux"][idx] = True
                 lora_elements["unet_flux"][idx][part] = value
+                isFlux = True
         for idx, val in enumerate(te_names):
             if val in part:
                 lora_detect["te"][idx] = True
@@ -155,8 +201,6 @@ def seperated_data(state_dict: dict):
 def print_calculated(name: str, opt: dict):
     if len(opt) > 0:
         print(f"\n{name} block averages, max weights and parameters:")
-
-        get_longest_key_name = len(max(opt.keys())) + 1
 
         table = [["block name", "average weight", "max weight", "parameters"]]
 
@@ -186,18 +230,19 @@ def print_calculated(name: str, opt: dict):
 def print_metadata(metadata: dict):
     print("\nMetadata")
     metadata_table = [["key", "value"]]
-    for k, v in metadata.items():
-        if "ss" in k and k not in [
-            "ss_tag_frequency",
-            "ss_bucket_info",
-            "sshs_model_hash",
-            "ss_new_sd_model_hash",
-            "ss_sd_scripts_commit_hash",
-            "ss_dataset_dirs",
-            "ss_reg_dataset_dirs",
-            "ss_datasets",
-        ]:
-            metadata_table.append([k, v])
+    if metadata:
+        for k, v in metadata.items():
+            if "ss" in k and k not in [
+                "ss_tag_frequency",
+                "ss_bucket_info",
+                "sshs_model_hash",
+                "ss_new_sd_model_hash",
+                "ss_sd_scripts_commit_hash",
+                "ss_dataset_dirs",
+                "ss_reg_dataset_dirs",
+                "ss_datasets",
+            ]:
+                metadata_table.append([k, v])
     print(
         tabulate(
             metadata_table,
@@ -226,16 +271,22 @@ def main(args):
     state_dict, metadata = load_state_dict(lora_model_path)
 
     if args.save_metadata:
-        with open(
-            os.path.join("metadata_output", f"{filename}_raw_metadata.json"), "+w"
-        ) as fp:
-            json.dump(metadata, fp, indent=4)
+        if metadata:
+            with open(
+                os.path.join("metadata_output", f"{filename}_raw_metadata.json"), "+w"
+            ) as fp:
+                json.dump(metadata, fp, indent=4)
+        else:
+            print("No metadata found")
 
     seperated_data(state_dict)
 
     if debug_parse["unet"]:
         unet_cal = calculate_parameters_avg_and_max_weights(
             "unet", unet_block_ranges, unet_base_names
+        )
+        unet_sd35_cal = calculate_parameters_avg_and_max_weights(
+            "unet35", unet_sd35_ranges, unet_sd35_names
         )
         unet_flux_cal = calculate_parameters_avg_and_max_weights(
             "unet_flux", unet_flux_ranges, unet_flux_names
@@ -254,12 +305,18 @@ def main(args):
             f"Conv layer UNet          : {format_parameters(legacy_count_parameters(state_dict, ['conv']))}"
         )
         print(
+            f"UNet Joint [SD3.5]       : {format_parameters(get_total_parameters(unet_sd35_cal))}"
+        )
+        print(
             f"UNet single block [Flux] : {format_parameters(get_total_parameters(unet_flux_cal, 'single'))}"
         )
         print(
             f"UNet double block [Flux] : {format_parameters(get_total_parameters(unet_flux_cal, 'double'))}"
         )
     if debug_parse["te"]:
+        print(
+            f"Text-Encoder 0 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te0'))}"
+        )
         print(
             f"Text-Encoder 1 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
         )
@@ -274,8 +331,10 @@ def main(args):
         print_metadata(metadata)
     if debug_parse["unet"]:
         print_calculated("UNet", unet_cal)
+        print_calculated("Unet SD3.5", unet_sd35_cal)
         print_calculated("UNet Flux", unet_flux_cal)
     if debug_parse["te"]:
+        print_calculated("Text-Encoder TE0", te_cal_seperated["te0"])
         print_calculated("Text-Encoder TE1", te_cal_seperated["te1"])
         print_calculated("Text-Encoder TE2", te_cal_seperated["te2"])
         print_calculated("Text-Encoder TE3", te_cal_seperated["te3"])
