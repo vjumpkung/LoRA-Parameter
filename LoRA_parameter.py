@@ -213,6 +213,9 @@ def print_calculated(name: str, opt: dict):
                 not_detected = None
                 table.append([block, not_detected, not_detected, not_detected])
         print(
+            f"{name} average weight : {mean(list(map(lambda x : x[0],filter(lambda x : None not in x,opt.values()))))}"
+        )
+        print(
             tabulate(
                 table,
                 headers="firstrow",
@@ -222,27 +225,15 @@ def print_calculated(name: str, opt: dict):
                 missingval="-",
             )
         )
-        print(
-            f"{name} average weight : {mean(list(map(lambda x : x[0],filter(lambda x : None not in x,opt.values()))))}"
-        )
 
 
 def print_metadata(metadata: dict):
     print("\nMetadata")
     metadata_table = [["key", "value"]]
     if metadata:
-        for k, v in metadata.items():
-            if "ss" in k and k not in [
-                "ss_tag_frequency",
-                "ss_bucket_info",
-                "sshs_model_hash",
-                "ss_new_sd_model_hash",
-                "ss_sd_scripts_commit_hash",
-                "ss_dataset_dirs",
-                "ss_reg_dataset_dirs",
-                "ss_datasets",
-            ]:
-                metadata_table.append([k, v])
+        for k, v in sorted(metadata.items()):
+            val = str(v)
+            metadata_table.append([k, val if len(val) < 80 else val[:77] + "..."])
     print(
         tabulate(
             metadata_table,
@@ -331,7 +322,7 @@ def main(args):
         print_metadata(metadata)
     if debug_parse["unet"]:
         print_calculated("UNet", unet_cal)
-        print_calculated("Unet SD3.5", unet_sd35_cal)
+        print_calculated("UNet SD3.5", unet_sd35_cal)
         print_calculated("UNet Flux", unet_flux_cal)
     if debug_parse["te"]:
         print_calculated("Text-Encoder TE0", te_cal_seperated["te0"])
