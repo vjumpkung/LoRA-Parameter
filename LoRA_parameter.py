@@ -213,9 +213,6 @@ def print_calculated(name: str, opt: dict):
                 not_detected = None
                 table.append([block, not_detected, not_detected, not_detected])
         print(
-            f"{name} average weight : {mean(list(map(lambda x : x[0],filter(lambda x : None not in x,opt.values()))))}"
-        )
-        print(
             tabulate(
                 table,
                 headers="firstrow",
@@ -224,6 +221,9 @@ def print_calculated(name: str, opt: dict):
                 tablefmt="psql",
                 missingval="-",
             )
+        )
+        print(
+            f"{name} average weight : {mean(list(map(lambda x : x[0],filter(lambda x : None not in x,opt.values()))))}"
         )
 
 
@@ -306,7 +306,7 @@ def main(args):
         )
     if debug_parse["te"]:
         print(
-            f"Text-Encoder 0 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te0')) if isFlux == False and isXL == False else 'Not Detected'}"
+            f"Text-Encoder 0 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te0')) if isFlux == False and isXL == False else 'Not Detect'}"
         )
         print(
             f"Text-Encoder 1 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
