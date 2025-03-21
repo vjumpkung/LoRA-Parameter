@@ -117,14 +117,16 @@ def calculate_parameters_avg_and_max_weights(key, block_ranges, base_names):
                 if block_weights:
                     combined_tensor = torch.cat(block_weights)
                     avg_weight = combined_tensor.abs().mean().item()
+                    min_weight = combined_tensor.abs().min().item()
                     max_weight = combined_tensor.abs().max().item()
                     block_averages_max_and_param[block_name] = (
                         avg_weight,
+                        min_weight,
                         max_weight,
                         sum(parameters),
                     )
                 else:
-                    block_averages_max_and_param[block_name] = (None, None, None)
+                    block_averages_max_and_param[block_name] = (None, None, None, None)
 
     return block_averages_max_and_param
 
@@ -141,7 +143,7 @@ def get_total_parameters(blocks: dict, select=""):
 
     total = 0
 
-    for key, (avg, maxx, parameters) in blocks.items():
+    for key, (avg, minn, maxx, parameters) in blocks.items():
         if (
             select not in ["single", "double", "te1", "te2", "te3"]
             and parameters is not None
@@ -202,22 +204,26 @@ def print_calculated(name: str, opt: dict):
     if len(opt) > 0:
         print(f"\n{name} block averages, max weights and parameters:")
 
-        table = [["block name", "average weight", "max weight", "parameters"]]
+        table = [
+            ["block name", "average weight", "min weight", "max weight", "parameters"]
+        ]
 
         for block, v in opt.items():
             if None not in v:
-                avg, max_val, parameters = v
+                avg, min_val, max_val, parameters = v
 
-                table.append([block, avg, max_val, f"{parameters:,}"])
+                table.append([block, avg, min_val, max_val, f"{parameters:,}"])
             else:
                 not_detected = None
-                table.append([block, not_detected, not_detected, not_detected])
+                table.append(
+                    [block, not_detected, not_detected, not_detected, not_detected]
+                )
         print(
             tabulate(
                 table,
                 headers="firstrow",
                 floatfmt=".16f",
-                colalign=("center", "center", "center", "center"),
+                colalign=("center", "center", "center", "center", "center"),
                 tablefmt="psql",
                 missingval="-",
             )
