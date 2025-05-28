@@ -43,30 +43,39 @@ unet_flux_ranges = [38, 19]
 unet_sd35_names = ["lora_unet_joint_blocks"]
 unet_sd35_ranges = [38]
 
+unet_chroma_names = [
+    "diffusion_model.single_blocks",
+    "diffusion_model.double_blocks",
+]
+unet_chroma_ranges = [38, 19]
+
 te_names = [
     "lora_te_text_model_encoder_layers",
     "lora_te1_text_model_encoder_layers",
     "lora_te2_text_model_encoder_layers",
-    "lora_te3_text_model_encoder_layers",
+    "lora_te3_encoder_block",
 ]
 
-te_block_ranges = [12, 12, 32, 24]
+te_block_ranges = [12, 12, 32, 21]
 
 lora_detect = {
     "unet": {"1.5": [False, False, False], "xl": [False, False, False]},
     "unet35": [False],
     "unet_flux": [False, False],
-    "te": [False, False, False],
+    "unet_chroma": [False, False],
+    "te": [False, False, False, False],
 }
 
 lora_elements = {
     "unet": [{}, {}, {}],
     "unet35": [{}],
     "unet_flux": [{}, {}],
+    "unet_chroma": [{}, {}],
     "te": [{}, {}, {}, {}],
 }
 isXL = False
 isFlux = False
+isChroma = False
 debug_parse = {"unet": False, "te": False}
 
 
@@ -103,6 +112,8 @@ def calculate_parameters_avg_and_max_weights(key, block_ranges, base_names):
         ):
             for i in range(block_range):
                 block_name = f"{base_name}_{i}"
+                if isChroma:
+                    block_name = f"{base_name}.{i}"
                 block_weights = []
                 parameters = []
                 for k, v in element.items():
@@ -166,6 +177,7 @@ def te_sepearator(te_cal: dict):
                 and None not in te_cal[i]
                 and isXL == False
                 and isFlux == False
+                and isChroma == False
             ):
                 te_cal_seperator[f"te0"][i] = te_cal[i]
             elif f"te{j}" in i and None not in te_cal[i]:
@@ -174,7 +186,7 @@ def te_sepearator(te_cal: dict):
 
 
 def seperated_data(state_dict: dict):
-    global isXL, isFlux
+    global isXL, isFlux, isChroma
     for part, value in state_dict.items():
         for k, v in unet_base_names.items():
             for idx, val in enumerate(v):
@@ -194,6 +206,11 @@ def seperated_data(state_dict: dict):
                 lora_detect["unet_flux"][idx] = True
                 lora_elements["unet_flux"][idx][part] = value
                 isFlux = True
+        for idx, val in enumerate(unet_chroma_names):
+            if val in part:
+                lora_detect["unet_chroma"][idx] = True
+                lora_elements["unet_chroma"][idx][part] = value
+                isChroma = True
         for idx, val in enumerate(te_names):
             if val in part:
                 lora_detect["te"][idx] = True
@@ -288,6 +305,9 @@ def main(args):
         unet_flux_cal = calculate_parameters_avg_and_max_weights(
             "unet_flux", unet_flux_ranges, unet_flux_names
         )
+        unet_chroma_cal = calculate_parameters_avg_and_max_weights(
+            "unet_chroma", unet_chroma_ranges, unet_chroma_names
+        )
     if debug_parse["te"]:
         te_cal = calculate_parameters_avg_and_max_weights(
             "te", te_block_ranges, te_names
@@ -296,32 +316,38 @@ def main(args):
 
     if debug_parse["unet"]:
         print(
-            f"UNet                     : {format_parameters(get_total_parameters(unet_cal))}"
+            f"UNet                       : {format_parameters(get_total_parameters(unet_cal))}"
         )
         print(
-            f"Conv layer UNet          : {format_parameters(legacy_count_parameters(state_dict, ['conv']))}"
+            f"Conv layer UNet            : {format_parameters(legacy_count_parameters(state_dict, ['conv']))}"
         )
         print(
-            f"UNet Joint [SD3.5]       : {format_parameters(get_total_parameters(unet_sd35_cal))}"
+            f"UNet Joint [SD3.5]         : {format_parameters(get_total_parameters(unet_sd35_cal))}"
         )
         print(
-            f"UNet single block [Flux] : {format_parameters(get_total_parameters(unet_flux_cal, 'single'))}"
+            f"UNet single block [Flux]   : {format_parameters(get_total_parameters(unet_flux_cal, 'single'))}"
         )
         print(
-            f"UNet double block [Flux] : {format_parameters(get_total_parameters(unet_flux_cal, 'double'))}"
+            f"UNet double block [Flux]   : {format_parameters(get_total_parameters(unet_flux_cal, 'double'))}"
+        )
+        print(
+            f"UNet single block [Chroma] : {format_parameters(get_total_parameters(unet_chroma_cal, 'single'))}"
+        )
+        print(
+            f"UNet double block [Chroma] : {format_parameters(get_total_parameters(unet_chroma_cal, 'double'))}"
         )
     if debug_parse["te"]:
         print(
-            f"Text-Encoder 0 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te0')) if isFlux == False and isXL == False else 'Not Detect'}"
+            f"Text-Encoder 0 Clip_L      : {format_parameters(get_total_parameters(te_cal, 'te0')) if isFlux == False and isXL == False and isChroma == False else 'Not Detect'}"
         )
         print(
-            f"Text-Encoder 1 Clip_L    : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
+            f"Text-Encoder 1 Clip_L      : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
         )
         print(
-            f"Text-Encoder 2 Clip_G    : {format_parameters(get_total_parameters(te_cal, 'te2'))}"
+            f"Text-Encoder 2 Clip_G      : {format_parameters(get_total_parameters(te_cal, 'te2'))}"
         )
         print(
-            f"Text-Encoder 3 T5XXL     : {format_parameters(get_total_parameters(te_cal, 'te3'))}"
+            f"Text-Encoder 3 T5XXL       : {format_parameters(get_total_parameters(te_cal, 'te3'))}"
         )
 
     if args.metadata:
@@ -330,6 +356,7 @@ def main(args):
         print_calculated("UNet", unet_cal)
         print_calculated("UNet SD3.5", unet_sd35_cal)
         print_calculated("UNet Flux", unet_flux_cal)
+        print_calculated("UNet Chroma", unet_chroma_cal)
     if debug_parse["te"]:
         print_calculated("Text-Encoder TE0", te_cal_seperated["te0"])
         print_calculated("Text-Encoder TE1", te_cal_seperated["te1"])
