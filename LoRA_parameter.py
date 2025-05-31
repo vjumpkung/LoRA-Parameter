@@ -38,7 +38,14 @@ unet_flux_names = [
     "lora_unet_single_blocks",
     "lora_unet_double_blocks",
 ]
+
+unet_ai_toolkit_flux_names = [
+    "transformer.single_transformer_blocks",
+    "transformer.double_transformer_blocks",
+]
+
 unet_flux_ranges = [38, 19]
+
 
 unet_sd35_names = ["lora_unet_joint_blocks"]
 unet_sd35_ranges = [38]
@@ -62,6 +69,7 @@ lora_detect = {
     "unet": {"1.5": [False, False, False], "xl": [False, False, False]},
     "unet35": [False],
     "unet_flux": [False, False],
+    "unet_aitoolkit_flux": [False, False],
     "unet_chroma": [False, False],
     "te": [False, False, False, False],
 }
@@ -70,11 +78,13 @@ lora_elements = {
     "unet": [{}, {}, {}],
     "unet35": [{}],
     "unet_flux": [{}, {}],
+    "unet_aitoolkit_flux": [{}, {}],
     "unet_chroma": [{}, {}],
     "te": [{}, {}, {}, {}],
 }
 isXL = False
 isFlux = False
+isAiToolkitFlux = False
 isChroma = False
 debug_parse = {"unet": False, "te": False}
 
@@ -112,7 +122,7 @@ def calculate_parameters_avg_and_max_weights(key, block_ranges, base_names):
         ):
             for i in range(block_range):
                 block_name = f"{base_name}_{i}"
-                if isChroma:
+                if isChroma or isAiToolkitFlux:
                     block_name = f"{base_name}.{i}"
                 block_weights = []
                 parameters = []
@@ -186,7 +196,7 @@ def te_sepearator(te_cal: dict):
 
 
 def seperated_data(state_dict: dict):
-    global isXL, isFlux, isChroma
+    global isXL, isFlux, isChroma, isAiToolkitFlux
     for part, value in state_dict.items():
         for k, v in unet_base_names.items():
             for idx, val in enumerate(v):
@@ -206,6 +216,11 @@ def seperated_data(state_dict: dict):
                 lora_detect["unet_flux"][idx] = True
                 lora_elements["unet_flux"][idx][part] = value
                 isFlux = True
+        for idx, val in enumerate(unet_ai_toolkit_flux_names):
+            if val in part:
+                lora_detect["unet_aitoolkit_flux"][idx] = True
+                lora_elements["unet_aitoolkit_flux"][idx][part] = value
+                isAiToolkitFlux = True
         for idx, val in enumerate(unet_chroma_names):
             if val in part:
                 lora_detect["unet_chroma"][idx] = True
@@ -226,6 +241,10 @@ def print_calculated(name: str, opt: dict):
         ]
 
         for block, v in opt.items():
+
+            if isAiToolkitFlux:
+                block = block[12:]
+
             if None not in v:
                 avg, min_val, max_val, parameters = v
 
@@ -305,6 +324,9 @@ def main(args):
         unet_flux_cal = calculate_parameters_avg_and_max_weights(
             "unet_flux", unet_flux_ranges, unet_flux_names
         )
+        unet_ai_toolkit_flux_cal = calculate_parameters_avg_and_max_weights(
+            "unet_aitoolkit_flux", unet_flux_ranges, unet_ai_toolkit_flux_names
+        )
         unet_chroma_cal = calculate_parameters_avg_and_max_weights(
             "unet_chroma", unet_chroma_ranges, unet_chroma_names
         )
@@ -316,38 +338,44 @@ def main(args):
 
     if debug_parse["unet"]:
         print(
-            f"UNet                       : {format_parameters(get_total_parameters(unet_cal))}"
+            f"UNet                                : {format_parameters(get_total_parameters(unet_cal))}"
         )
         print(
-            f"Conv layer UNet            : {format_parameters(legacy_count_parameters(state_dict, ['conv']))}"
+            f"Conv layer UNet                     : {format_parameters(legacy_count_parameters(state_dict, ['conv']))}"
         )
         print(
-            f"UNet Joint [SD3.5]         : {format_parameters(get_total_parameters(unet_sd35_cal))}"
+            f"UNet Joint [SD3.5]                  : {format_parameters(get_total_parameters(unet_sd35_cal))}"
         )
         print(
-            f"UNet single block [Flux]   : {format_parameters(get_total_parameters(unet_flux_cal, 'single'))}"
+            f"UNet single block [Flux]            : {format_parameters(get_total_parameters(unet_flux_cal, 'single'))}"
         )
         print(
-            f"UNet double block [Flux]   : {format_parameters(get_total_parameters(unet_flux_cal, 'double'))}"
+            f"UNet double block [Flux]            : {format_parameters(get_total_parameters(unet_flux_cal, 'double'))}"
         )
         print(
-            f"UNet single block [Chroma] : {format_parameters(get_total_parameters(unet_chroma_cal, 'single'))}"
+            f"UNet single block [AI Toolkit Flux] : {format_parameters(get_total_parameters(unet_ai_toolkit_flux_cal, 'single'))}"
         )
         print(
-            f"UNet double block [Chroma] : {format_parameters(get_total_parameters(unet_chroma_cal, 'double'))}"
+            f"UNet double block [AI Toolkit Flux] : {format_parameters(get_total_parameters(unet_ai_toolkit_flux_cal, 'double'))}"
+        )
+        print(
+            f"UNet single block [Chroma]          : {format_parameters(get_total_parameters(unet_chroma_cal, 'single'))}"
+        )
+        print(
+            f"UNet double block [Chroma]          : {format_parameters(get_total_parameters(unet_chroma_cal, 'double'))}"
         )
     if debug_parse["te"]:
         print(
-            f"Text-Encoder 0 Clip_L      : {format_parameters(get_total_parameters(te_cal, 'te0')) if isFlux == False and isXL == False and isChroma == False else 'Not Detect'}"
+            f"Text-Encoder 0 Clip_L               : {format_parameters(get_total_parameters(te_cal, 'te0')) if isFlux == False and isXL == False and isChroma == False else 'Not Detect'}"
         )
         print(
-            f"Text-Encoder 1 Clip_L      : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
+            f"Text-Encoder 1 Clip_L               : {format_parameters(get_total_parameters(te_cal, 'te1'))}"
         )
         print(
-            f"Text-Encoder 2 Clip_G      : {format_parameters(get_total_parameters(te_cal, 'te2'))}"
+            f"Text-Encoder 2 Clip_G               : {format_parameters(get_total_parameters(te_cal, 'te2'))}"
         )
         print(
-            f"Text-Encoder 3 T5XXL       : {format_parameters(get_total_parameters(te_cal, 'te3'))}"
+            f"Text-Encoder 3 T5XXL                : {format_parameters(get_total_parameters(te_cal, 'te3'))}"
         )
 
     if args.metadata:
@@ -356,6 +384,7 @@ def main(args):
         print_calculated("UNet", unet_cal)
         print_calculated("UNet SD3.5", unet_sd35_cal)
         print_calculated("UNet Flux", unet_flux_cal)
+        print_calculated("UNet Flux AI Toolkit", unet_ai_toolkit_flux_cal)
         print_calculated("UNet Chroma", unet_chroma_cal)
     if debug_parse["te"]:
         print_calculated("Text-Encoder TE0", te_cal_seperated["te0"])
