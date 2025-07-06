@@ -30,26 +30,20 @@ drop file into dropfile_LoRA_parameter.bat
 - Stable Diffusion 1.5 [Conv]
 - Stable Diffusion XL [Conv]
 - Stable Diffusion 3.5 Large/Medium
-- Flux.1 Dev
-
-## TODO
-
-- [ ] Graph Plotting (export as image)
+- Flux.1 Dev (kohya-ss, ai-toolkit, fal)
+- Flux.1 Kontext Dev
+- Chroma
 
 ## Sample output
 
 ### total parameters
 
 ```
-UNet                     : 42.56M parameters (42,558,162)
-Conv layer UNet          : Not Detect
-UNet Joint [SD3.5]       : Not Detect
-UNet single block [Flux] : Not Detect
-UNet double block [Flux] : Not Detect
-Text-Encoder 1 Clip_L    : Not Detect
-Text-Encoder 1 Clip_L    : 3.10M parameters (3,096,660)
-Text-Encoder 2 Clip_G    : 19.91M parameters (19,906,884)
-Text-Encoder 3 T5XXL     : Not Detect
+---TOTAL PARAMETERS---
+
+Transformers single block [kohya-ss] : 58.39M parameters (58,392,774)
+Transformers double block [kohya-ss] : 63.31M parameters (63,308,056)
+Text-Encoder - CLIP-L        : 3.10M parameters (3,096,660)
 ```
 
 ### average, max, parameters in each block weight
